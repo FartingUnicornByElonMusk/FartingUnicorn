@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>$FU Game</title>
+    <style>
+        canvas { border: 1px solid black; }
+        body { display: flex; justify-content: center; background: #87CEEB; margin: 0; }
+    </style>
+</head>
+<body>
+    <canvas id="game" width="400" height="600"></canvas>
+    <audio id="fartSound" src="fart.mp3"></audio> <!-- Replace "fart.mp3" with your sound file -->
+    <script>
+        const canvas = document.getElementById("game");
+        const ctx = canvas.getContext("2d");
+        const fartSound = document.getElementById("fartSound");
+
+        // Game state
+        let unicorn = { x: 100, y: 300, vy: -2, fartTime: 0 };
+        let pipes = [{ x: 400, height: 200 }];
+        let poops = []; // Array for poop coins
+        let score = 0;
+        let gameOver = false;
+        let gameStarted = false;
+
+        // Constants
+        const GRAVITY = 0.11025;
+        const FART = -5;
+        const PIPE_WIDTH = 50;
+        const PIPE_GAP = 200;
+        const PIPE_SPEED = 2;
+        const POOP_SIZE = 20;
+
+        // Colors
+        const SKY_BLUE = "#87CEEB";
+        const UNICORN_COLOR = "#FFFFFF";
+        const HORN_COLOR = "#FFD700";
+        const FART_COLOR = "rgba(200, 150, 255, 0.7)";
+        const POOP_COLOR = "#FFD700"; // Golden poop
+        const RAINBOW = ["#FF0000", "#FF7F00", "#FFFF00", "#00FF00", "#0000FF", "#4B0082"];
+
+        // Input handling
+        document.addEventListener("keydown", (e) => {
+            if (e.code === "Space") {
+                e.preventDefault();
+                if (!gameStarted) {
+                    gameStarted = true;
+                }
+                if (!gameOver) {
+                    unicorn.vy = FART;
+                    unicorn.fartTime = 20;
+                    fartSound.currentTime = 0; // Reset sound to start
+                    fartSound.play().catch(() => console.log("Audio failed—check file path!"));
+                } else {
+                    setTimeout(restart, 500);
+                }
+            }
+        });
+
+        // Game loop with FPS control
+        let lastTime = performance.now();
+        const FPS = 60;
+        const FRAME_TIME = 1000 / FPS;
+
+        function update(currentTime) {
+            if (currentTime - lastTime < FRAME_TIME) {
+                requestAnimationFrame(update);
+                return;
+            }
+            lastTime = currentTime;
+
+            if (!gameStarted) {
+                drawStartScreen();
+                requestAnimationFrame(update);
+                return;
+            }
+
+            if (gameOver) {
+                drawGameOver();
+                return;
+            }
+
+            // Update unicorn
+            unicorn.vy += GRAVITY;
+            unicorn.y += unicorn.vy;
+            if (unicorn.fartTime > 0) unicorn.fartTime--;
+
+            // Update pipes
+            pipes.forEach(pipe => pipe.x -= PIPE_SPEED);
+            if (pipes[0].x < -PIPE_WIDTH) {
+                pipes.shift();
+                pipes.push({ x: 400, height: Math.random() * (400 - PIPE_GAP) + 100 });
+                score++;
+                // Randomly spawn a poop coin
+                if (Math.random() < 0.3) { // 30% chance per pipe
+                    poops.push({ x: 400, y: Math.random() * (500 - POOP_SIZE) + 50 });
+                }
+            }
+            if (pipes.length < 2 && pipes[pipes.length - 1].x < 300) {
+                pipes.push({ x: 400, height: Math.random() * (400 - PIPE_GAP) + 100 });
+            }
+
+            // Update poops
+            poops.forEach(poop => poop.x -= PIPE_SPEED);
+            poops = poops.filter(poop => poop.x > -POOP_SIZE); // Remove off-screen poops
+
+            // Collision detection (unicorn vs pipes)
+            const uRect = { x: unicorn.x, y: unicorn.y, w: 40, h: 30 };
+            for (let pipe of pipes) {
+                const topRect = { x: pipe.x, y: 0, w: PIPE_WIDTH, h: pipe.height };
+                const bottomRect = { x: pipe.x, y: pipe.height + PIPE_GAP, w: PIPE_WIDTH, h: 600 - (pipe.height + PIPE_GAP) };
+                if (uRect.x + uRect.w > topRect.x && uRect.x < topRect.x + topRect.w &&
+                    uRect.y < topRect.y + topRect.h && uRect.y + uRect.h > topRect.y) {
+                    gameOver = true;
+                }
+                if (uRect.x + uRect.w > bottomRect.x && uRect.x < bottomRect.x + bottomRect.w &&
+                    uRect.y < bottomRect.y + bottomRect.h && uRect.y + uRect.h > bottomRect.y) {
+                    gameOver = true;
+                }
+            }
+            if (unicorn.y < 0 || unicorn.y + 30 > 600) gameOver = true;
+
+            // Collision detection (unicorn vs poops)
+            poops = poops.filter(poop => {
+                const pRect = { x: poop.x, y: poop.y, w: POOP_SIZE, h: POOP_SIZE };
+                if (uRect.x + uRect.w > pRect.x && uRect.x < pRect.x + pRect.w &&
+                    uRect.y + uRect.h > pRect.y && uRect.y < pRect.y + pRect.h) {
+                    score += 5; // +5 for each poop collected
+                    return false; // Remove collected poop
+                }
+                return true;
+            });
+
+            // Draw
+            ctx.fillStyle = SKY_BLUE;
+            ctx.fillRect(0, 0, 400, 600);
+
+            pipes.forEach(pipe => {
+                for (let i = 0; i < RAINBOW.length; i++) {
+                    ctx.fillStyle = RAINBOW[i];
+                    ctx.fillRect(pipe.x, 0 + i * 5, PIPE_WIDTH, pipe.height);
+                    ctx.fillRect(pipe.x, pipe.height + PIPE_GAP + i * 5, PIPE_WIDTH, 600 - (pipe.height + PIPE_GAP));
+                }
+            });
+
+            // Draw poops
+            poops.forEach(poop => drawPoop(poop.x, poop.y));
+
+            // Draw unicorn
+            drawUnicorn(unicorn.x, unicorn.y);
+
+            // Draw mushroom-shaped fart
+            if (unicorn.fartTime > 0) {
+                const fartScale = 1 + (20 - unicorn.fartTime) * 0.05;
+                const wobble = Math.sin(unicorn.fartTime * 0.5) * 2;
+                ctx.fillStyle = FART_COLOR;
+                ctx.beginPath();
+                ctx.moveTo(unicorn.x + 10, unicorn.y + 25);
+                ctx.lineTo(unicorn.x, unicorn.y + 20);
+                ctx.quadraticCurveTo(unicorn.x - 10 + wobble, unicorn.y + 25, unicorn.x, unicorn.y + 30);
+                ctx.lineTo(unicorn.x + 10, unicorn.y + 25);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.moveTo(unicorn.x, unicorn.y + 20);
+                ctx.quadraticCurveTo(unicorn.x - 15 - wobble, unicorn.y + 10, unicorn.x - 30, unicorn.y + 20);
+                ctx.quadraticCurveTo(unicorn.x - 40 + wobble, unicorn.y + 30, unicorn.x - 30, unicorn.y + 40);
+                ctx.quadraticCurveTo(unicorn.x - 15 - wobble, unicorn.y + 50, unicorn.x, unicorn.y + 30);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // Draw $FU SCORE
+            ctx.fillStyle = "white";
+            ctx.font = "20px Arial";
+            ctx.fillText(`$FU SCORE: ${score}`, 10, 30);
+
+            requestAnimationFrame(update);
+        }
+
+        // Draw 2D unicorn
+        function drawUnicorn(x, y) {
+            ctx.fillStyle = UNICORN_COLOR;
+            ctx.beginPath();
+            ctx.moveTo(x + 10, y + 20);
+            ctx.lineTo(x + 40, y + 20);
+            ctx.lineTo(x + 40, y + 30);
+            ctx.lineTo(x + 10, y + 30);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.moveTo(x + 30, y + 10);
+            ctx.lineTo(x + 40, y + 20);
+            ctx.lineTo(x + 30, y + 20);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = HORN_COLOR;
+            ctx.beginPath();
+            ctx.moveTo(x + 35, y + 5);
+            ctx.lineTo(x + 40, y + 15);
+            ctx.lineTo(x + 30, y + 15);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = UNICORN_COLOR;
+            ctx.fillRect(x + 15, y + 30, 5, 10);
+            ctx.fillRect(x + 30, y + 30, 5, 10);
+        }
+
+        // Draw poop coin
+        function drawPoop(x, y) {
+            ctx.fillStyle = POOP_COLOR;
+            ctx.beginPath();
+            ctx.moveTo(x + 10, y); // Top of poop
+            ctx.quadraticCurveTo(x + 15, y + 5, x + 10, y + 10); // Swirl
+            ctx.quadraticCurveTo(x + 5, y + 15, x + 10, y + 20); // Base curve
+            ctx.quadraticCurveTo(x + 15, y + 15, x + 10, y + 10); // Back up
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        // Start screen
+        function drawStartScreen() {
+            ctx.fillStyle = SKY_BLUE;
+            ctx.fillRect(0, 0, 400, 600);
+            ctx.fillStyle = "white";
+            ctx.font = "30px Arial";
+            ctx.fillText("Press Space to Start", 70, 300);
+            drawUnicorn(unicorn.x, unicorn.y);
+        }
+
+        // Game over screen
+        function drawGameOver() {
+            ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+            ctx.fillRect(0, 0, 400, 600);
+            ctx.fillStyle = "white";
+            ctx.font = "30px Arial";
+            ctx.fillText(`Game Over! Score: ${score}`, 50, 300);
+            ctx.font = "20px Arial";
+            ctx.fillText("Press Space to Restart", 100, 340);
+        }
+
+        // Restart
+        function restart() {
+            unicorn = { x: 100, y: 300, vy: -2, fartTime: 0 };
+            pipes = [{ x: 400, height: 200 }];
+            poops = [];
+            score = 0;
+            gameOver = false;
+            gameStarted = true;
+            update(performance.now());
+        }
+
+        // Begin
+        requestAnimationFrame(update);
+    </script>
+</body>
+</html>
